@@ -1730,6 +1730,28 @@ local emojis = {
   ['flag Wales'] = '🏴󠁧󠁢󠁷󠁬󠁳󠁿',
 }
 
+---@param name string
+---@param emoji string
+---@param range lsp.Range
+---@return lsp.CompletionItem
+local function to_completion_item(name, emoji, range)
+  ---@type lsp.CompletionItem
+  return {
+    label = ":" .. name .. ":",
+    labelDetails = {
+      detail = emoji,
+    },
+    textEdit = {
+      newText = emoji,
+      range = range,
+    },
+  }
+end
+
+local emoji_name_pattern = [=[:[^: "]+:\?]=]
+---@type vim.regex
+local emoji_name_re = vim.regex(emoji_name_pattern .. '$')
+
 local source = {}
 
 ---@return string[]
@@ -1737,31 +1759,44 @@ function source:get_trigger_characters()
     return { ':' }
 end
 
----@param name string
----@param emoji string
----@return lsp.CompletionItem
-local function to_completion_item(name, emoji)
-  ---@type lsp.CompletionItem
-  return {
-    label = ":" .. name .. ":",
-    labelDetails = {
-      detail = emoji,
-    },
-    insertText = emoji,
-  }
+---@return string
+function source:get_keyword_pattern()
+  return emoji_name_pattern
 end
 
 ---@param parameters cmp.SourceCompletionApiParams
 ---@param callback fun(response: lsp.CompletionResponse|nil)
 function source:complete(parameters, callback)
-  ---@type lsp.CompletionItem[]
-  local completion_list = {}
-  -- The emoji name is taken as the currently completing word, skipping the
-  -- initial colon.
-  local emoji_name = string.sub(parameters.context.cursor_before_line, parameters.offset + 1)
+  local completing_start = emoji_name_re:match_str(parameters.context.cursor_before_line)
+  if not completing_start then
+    return callback()
+  end
+  -- Skip the initial colon of the completing text.
+  local completing_text = string.sub(parameters.context.cursor_before_line, completing_start + 1)
+  -- Skip any ending colon too.
+  if string.sub(completing_text, -1) == ":" then
+    completing_text = string.sub(completing_text, 1, -2)
+  end
+
+  ---@type lsp.Range
+  local completing_range = {
+    start = {
+      line = parameters.context.cursor.line,
+      character = completing_start,
+    },
+    ['end'] = {
+      line = parameters.context.cursor.line,
+      character = parameters.context.cursor.character,
+    },
+  }
+  ---@type lsp.CompletionList
+  local completion_list = {
+    isIncomplete = true,
+    items = {}
+  }
   for key, value in pairs(emojis) do
-    if string.find(key, emoji_name, 1, true) then
-      table.insert(completion_list, to_completion_item(key, value))
+    if string.find(key, completing_text, 1, true) then
+      table.insert(completion_list.items, to_completion_item(key, value, completing_range))
     end
   end
   callback(completion_list)
