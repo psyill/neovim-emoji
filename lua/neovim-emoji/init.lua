@@ -1748,7 +1748,23 @@ local function to_completion_item(name, emoji, range)
   }
 end
 
-local emoji_name_pattern = [=[:[^: "]+:\?]=]
+---@param cursor lsp.Position|vim.Position
+---@param completion_start integer
+---@return lsp.Range
+local function create_completion_range(cursor, completion_start)
+  return {
+    start = {
+      line = cursor.line,
+      character = completion_start,
+    },
+    ['end'] = {
+      line = cursor.line,
+      character = cursor.character,
+    },
+  }
+end
+
+local emoji_name_pattern = [=[:[^:"]\+:\?]=]
 ---@type vim.regex
 local emoji_name_re = vim.regex(emoji_name_pattern .. '$')
 
@@ -1767,28 +1783,19 @@ end
 ---@param parameters cmp.SourceCompletionApiParams
 ---@param callback fun(response: lsp.CompletionResponse|nil)
 function source:complete(parameters, callback)
-  local completing_start = emoji_name_re:match_str(parameters.context.cursor_before_line)
+  local completing_start, _ = emoji_name_re:match_str(parameters.context.cursor_before_line)
   if not completing_start then
     return callback()
   end
-  -- Skip the initial colon of the completing text.
-  local completing_text = string.sub(parameters.context.cursor_before_line, completing_start + 1)
+  -- Skip the initial colon of the completing text (add one for lua string index
+  -- offset too).
+  local completing_text = string.sub(parameters.context.cursor_before_line, completing_start + 2)
   -- Skip any ending colon too.
   if string.sub(completing_text, -1) == ":" then
     completing_text = string.sub(completing_text, 1, -2)
   end
 
-  ---@type lsp.Range
-  local completing_range = {
-    start = {
-      line = parameters.context.cursor.line,
-      character = completing_start,
-    },
-    ['end'] = {
-      line = parameters.context.cursor.line,
-      character = parameters.context.cursor.character,
-    },
-  }
+  local completing_range = create_completion_range(parameters.context.cursor, completing_start)
   ---@type lsp.CompletionList
   local completion_list = {
     isIncomplete = true,
